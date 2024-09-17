@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tambah Wajah Baru ke Dataset</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <h1 class="mt-5">Tambah Wajah Baru ke Dataset</h1>
+        <form class="mt-4">
+            <div class="form-group">
+                <label for="person_name">Masukkan nama orang baru:</label>
+                <input type="text" class="form-control" id="person_name" name="person_name" required>
+            </div>
+            <button type="button" class="btn btn-primary" onclick="startCapture()">Tambahkan Wajah Baru</button>
+        </form>
+        
+        <div class="mt-4">
+            <video id="webcam" autoplay muted style="width: 100%;"></video>
+            <canvas id="canvas" style="display:none;"></canvas>
+            <div id="statusMessage" class="mt-2"></div>
+        </div>
+        <div class="mt-4">
+            <h3>Hasil Pengolahan Citra</h3>
+            <div class="row">
+                <div class="col">
+                    <h5>Gambar dengan Noise</h5>
+                    <img id="noisyImage" src="" alt="Noisy Image" style="width: 100%;">
+                </div>
+                <div class="col">
+                    <h5>Gambar tanpa Noise</h5>
+                    <img id="denoisedImage" src="" alt="Denoised Image" style="width: 100%;">
+                </div>
+                <div class="col">
+                    <h5>Gambar yang Ditajamkan</h5>
+                    <img id="sharpenedImage" src="" alt="Sharpened Image" style="width: 100%;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS and dependencies -->
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        let video = document.getElementById('webcam');
+        let canvas = document.getElementById('canvas');
+        let context = canvas.getContext('2d');
+        let personName = '';
+
+        async function startCapture() {
+            personName = document.getElementById("person_name").value;
+
+            if (!personName) {
+                alert("Silakan masukkan nama orang baru.");
+                return;
+            }
+
+            if (navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ video: true })
+                .then(function (stream) {
+                    video.srcObject = stream;
+                    captureImages();
+                })
+                .catch(function (error) {
+                    console.log("Something went wrong with the webcam!");
+                });
+            }
+        }
+
+        function captureImages() {
+            let numImages = 0;
+            let maxImages = 20;
+
+            let interval = setInterval(async function () {
+                if (numImages >= maxImages) {
+                    clearInterval(interval);
+                    video.srcObject.getTracks().forEach(track => track.stop()); // Stop webcam
+                    alert("Pengambilan gambar selesai.");
+                    return;
+                }
+
+                // Draw the current frame to the canvas
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                let image_data_url = canvas.toDataURL('image/jpeg');
+
+                // Send captured image to the server
+                try {
+                    const response = await fetch('http://127.0.0.1:8000/capture-images/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ 
+                            person_name: personName,
+                            image_data: image_data_url
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to capture image');
+                    }
+
+                    const result = await response.json();
+                    document.getElementById('statusMessage').innerText = result.detail;
+
+                    // Tampilkan hasil pengolahan citra
+                    document.getElementById('noisyImage').src = result.noisy_image;
+                    document.getElementById('denoisedImage').src = result.denoised_image;
+                    document.getElementById('sharpenedImage').src = result.sharpened_image;
+
+                    // Increment the image counter
+                    numImages++;
+                    document.getElementById('statusMessage').innerText = `Gambar ${numImages}/${maxImages} diambil`;
+                } catch (error) {
+                    console.error('Error:', error);
+                    document.getElementById('statusMessage').innerText = 'Gagal menangkap gambar.';
+                }
+            }, 500); // Capture an image every 500ms
+        }
+    </script>
+</body>
+</html>
