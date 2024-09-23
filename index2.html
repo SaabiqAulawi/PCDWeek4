@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Processing Application</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <h1 class="mt-5">Image Processing Application</h1>
+        
+        <div class="mt-4">
+            <h2>Step 1: Capture Image</h2>
+            <div class="form-group">
+                <label for="person_name">Person Name:</label>
+                <input type="text" class="form-control" id="person_name" name="person_name" required>
+            </div>
+            <video id="webcam" autoplay muted style="width: 100%;"></video>
+            <canvas id="canvas" style="display:none;"></canvas>
+            <button id="captureBtn" class="btn btn-primary mt-2">Capture Image</button>
+            <div id="captureStatus" class="mt-2"></div>
+        </div>
+
+        <div class="mt-4">
+            <h2>Step 2: Process Image</h2>
+            <form id="processForm">
+                <div class="form-group">
+                    <label for="noise_prob">Noise Probability (0-1):</label>
+                    <input type="number" class="form-control" id="noise_prob" name="noise_prob" min="0" max="1" step="0.01" value="0.05" required>
+                </div>
+                <div class="form-group">
+                    <label for="salt_color">Salt Color (R,G,B):</label>
+                    <input type="text" class="form-control" id="salt_color" name="salt_color" value="255,255,255" required>
+                </div>
+                <div class="form-group">
+                    <label for="pepper_color">Pepper Color (R,G,B):</label>
+                    <input type="text" class="form-control" id="pepper_color" name="pepper_color" value="0,0,0" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Process Image</button>
+            </form>
+        </div>
+
+        <div class="mt-4">
+            <h2>Results</h2>
+            <div class="row">
+                <div class="col">
+                    <h5>Original Image</h5>
+                    <img id="originalImage" src="" alt="Original Image" style="width: 100%;">
+                </div>
+                <div class="col">
+                    <h5>Noisy Image</h5>
+                    <img id="noisyImage" src="" alt="Noisy Image" style="width: 100%;">
+                </div>
+                <div class="col">
+                    <h5>Colored Noise Image</h5>
+                    <img id="coloredNoiseImage" src="" alt="Colored Noise Image" style="width: 100%;">
+                </div>
+                <div class="col">
+                    <h5>Denoised Image</h5>
+                    <img id="denoisedImage" src="" alt="Denoised Image" style="width: 100%;">
+                </div>
+            </div>
+            <div id="noiseCount" class="mt-2"></div>
+            <div id="savedFilename" class="mt-2"></div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+        let video = document.getElementById('webcam');
+        let canvas = document.getElementById('canvas');
+        let context = canvas.getContext('2d');
+        let capturedImageData = null;
+
+        async function startCapture() {
+            if (navigator.mediaDevices.getUserMedia) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    video.srcObject = stream;
+                } catch (error) {
+                    console.log("Something went wrong with the webcam!");
+                }
+            }
+        }
+
+        document.getElementById('captureBtn').addEventListener('click', async function() {
+            const personName = document.getElementById('person_name').value;
+            if (!personName) {
+                alert("Please enter a person name before capturing.");
+                return;
+            }
+
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            capturedImageData = canvas.toDataURL('image/jpeg');
+            document.getElementById('originalImage').src = capturedImageData;
+
+            try {
+                const response = await fetch('/capture-images/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        person_name: personName,
+                        image_data: capturedImageData
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to save image');
+                }
+
+                const result = await response.json();
+                document.getElementById('captureStatus').innerText = result.detail;
+                document.getElementById('savedFilename').innerText = `Saved as: ${result.filename}`;
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to save image. Please try again.');
+            }
+        });
+
+        document.getElementById('processForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            if (!capturedImageData) {
+                alert("Please capture an image first!");
+                return;
+            }
+
+            const formData = {
+                image_data: capturedImageData,
+                noise_prob: document.getElementById('noise_prob').value,
+                salt_color: document.getElementById('salt_color').value,
+                pepper_color: document.getElementById('pepper_color').value,
+                person_name: document.getElementById('person_name').value
+            };
+
+            try {
+                const response = await fetch('/process-image/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to process image');
+                }
+
+                const result = await response.json();
+                document.getElementById('noisyImage').src = result.noisy_image;
+                document.getElementById('coloredNoiseImage').src = result.colored_noise_image;
+                document.getElementById('denoisedImage').src = result.denoised_image;
+                document.getElementById('noiseCount').innerText = `Number of noise pixels: ${result.noise_count}`;
+                document.getElementById('savedFilename').innerText += `\nProcessed images saved based on: ${result.original_filename}`;
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to process image. Please try again.');
+            }
+        });
+
+        startCapture();
+    </script>
+</body>
+</html>
